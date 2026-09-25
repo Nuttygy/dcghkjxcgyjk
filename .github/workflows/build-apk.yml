@@ -26,7 +26,7 @@ jobs:
       - name: Check project
         run: |
           echo "Project files:"
-          find source/EcuPinExtractor -maxdepth 3 -type f | sort
+          find source/EcuPinExtractor -maxdepth 4 -type f | sort
 
       - name: Install Gradle 8.4
         run: |
@@ -47,6 +47,63 @@ jobs:
               id("org.jetbrains.kotlin.android") version "1.9.22" apply false
           }
           EOF
+
+      - name: Create missing Android resources
+        working-directory: source/EcuPinExtractor
+        run: |
+          mkdir -p app/src/main/res/xml
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/res/mipmap-mdpi
+          mkdir -p app/src/main/res/mipmap-xhdpi
+          mkdir -p app/src/main/res/mipmap-xxhdpi
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
+
+          cat > app/src/main/res/xml/backup_rules.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <full-backup-content>
+          </full-backup-content>
+          EOF
+
+          cat > app/src/main/res/xml/data_extraction_rules.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <data-extraction-rules>
+              <cloud-backup>
+              </cloud-backup>
+              <device-transfer>
+              </device-transfer>
+          </data-extraction-rules>
+          EOF
+
+          python3 - <<'PY'
+          import struct
+          import zlib
+
+          def png(path):
+              raw = b'\x00\x00\x00\x00'
+
+              def chunk(t, d):
+                  return (
+                      struct.pack(">I", len(d))
+                      + t
+                      + d
+                      + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+                  )
+
+              data = b'\x89PNG\r\n\x1a\n'
+              data += chunk(
+                  b'IHDR',
+                  struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
+              )
+              data += chunk(b'IDAT', zlib.compress(raw))
+              data += chunk(b'IEND', b'')
+
+              with open(path, 'wb') as f:
+                  f.write(data)
+
+          for density in ["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"]:
+              png(f"app/src/main/res/mipmap-{density}/ic_launcher.png")
+              png(f"app/src/main/res/mipmap-{density}/ic_launcher_round.png")
+          PY
 
       - name: Build Debug APK
         working-directory: source/EcuPinExtractor
